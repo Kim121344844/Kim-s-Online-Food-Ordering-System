@@ -85,6 +85,59 @@
     <p>© 2025 Online Food Ordering System. | John 3:16 Unconditional Love.</p>
   </footer>
 
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <script>
+    const socket = io();
+
+    socket.on('order_update', function(data) {
+      console.log('Order update received:', data);
+      // Refresh notifications and order history
+      fetchUserOrders();
+    });
+
+    // Function to fetch user orders and update UI
+    async function fetchUserOrders() {
+      try {
+        const response = await fetch('/api/user_orders');
+        if (response.ok) {
+          const data = await response.json();
+          updateNotifications(data.notifications);
+          updateOrderHistory(data.order_history);
+        } else {
+          console.error('Failed to fetch user orders:', response.status);
+        }
+      } catch (error) {
+        console.error('Error fetching user orders:', error);
+      }
+    }
+
+    // Function to update notifications
+    function updateNotifications(notifications) {
+      const ul = document.getElementById('notifications-list');
+      ul.innerHTML = '';
+      notifications.forEach(notification => {
+        const li = document.createElement('li');
+        li.textContent = notification;
+        ul.appendChild(li);
+      });
+    }
+
+    // Function to update order history
+    function updateOrderHistory(orderHistory) {
+      const ul = document.getElementById('order-history-list');
+      ul.innerHTML = '';
+      orderHistory.forEach(order => {
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>Order ID:</strong> ${order.order_id} - <strong>Date:</strong> ${order.date} - <strong>Items:</strong> ${order.items.join(', ')} - <strong>Status:</strong> ${order.status}`;
+        ul.appendChild(li);
+      });
+    }
+
+    // Fetch user orders on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      fetchUserOrders();
+    });
+  </script>
 </body>
 </html>

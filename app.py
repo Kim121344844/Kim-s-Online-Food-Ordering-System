@@ -3,12 +3,14 @@ import uuid
 import requests
 import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask_socketio import SocketIO, emit, join_room
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'  # Change this to a secure secret key
+socketio = SocketIO(app)
 
 # Payment API functions
 
@@ -194,7 +196,7 @@ def payment():
             else:
                 return render_template('payment.html', cart=cart, error='PayMaya payment initiation failed.')
         else:  # COD
-            status = 'Paid'
+            status = 'Processing'
             payment_id = None
 
         # Store order details
@@ -320,6 +322,8 @@ def cancel_order(order_id):
     order = next((o for o in all_orders if o['order_id'] == order_id), None)
     if order and order['status'] != 'Cancelled':
         order['status'] = 'Cancelled'
+        # Emit real-time updates
+        socketio.emit('order_update', {'order_id': order_id, 'status': 'Cancelled', 'user_email': order['user_email']})
         return {'success': True}
     return {'error': 'Invalid order ID or status'}, 400
 
@@ -334,8 +338,24 @@ def approve_order(order_id):
     order = next((o for o in all_orders if o['order_id'] == order_id), None)
     if order and order['status'] == 'Processing':
         order['status'] = 'Paid'
+        # Emit real-time updates
+        socketio.emit('order_update', {'order_id': order_id, 'status': 'Paid', 'user_email': order['user_email']})
         return {'success': True}
     return {'error': 'Invalid order ID or status'}, 400
+
+@socketio.on('connect')
+def handle_connect():
+    user_email = session.get('user')
+    if user_email:
+        join_room(user_email)
+        user = next((u for u in users if u['email'] == user_email), None)
+        if user and user.get('role') == 'admin':
+            join_room('admin')
+        print(f'User {user_email} connected')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
 
 @app.route('/payment_status/<order_id>')
 def payment_status(order_id):
@@ -351,4 +371,4 @@ def payment_status(order_id):
     return jsonify({'status': order['status']})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app, debug=True)

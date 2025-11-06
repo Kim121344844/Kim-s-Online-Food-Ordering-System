@@ -73,14 +73,10 @@
               <td>{{ order.status }}</td>
               <td>
                 {% if order.status != 'Cancelled' %}
-                <form method="POST" action="{{ url_for('cancel_order', order_id=order.order_id) }}" style="display:inline;" onsubmit="return cancelOrder(event, '{{ order.order_id }}')">
-                  <button type="submit" class="btn btn-danger">Cancel Order</button>
-                </form>
+                <button type="button" class="btn btn-danger" onclick="cancelOrder('{{ order.order_id }}')">Cancel Order</button>
                 {% endif %}
                 {% if order.status == 'Processing' %}
-                <form method="POST" action="{{ url_for('approve_order', order_id=order.order_id) }}" style="display:inline;" onsubmit="return approveOrder(event, '{{ order.order_id }}')">
-                  <button type="submit" class="btn btn-success">Approve Order</button>
-                </form>
+                <button type="button" class="btn btn-success" onclick="approveOrder('{{ order.order_id }}')">Approve Order</button>
                 {% elif order.status == 'Paid' %}
                 <span class="status-approved">Approved</span>
                 {% elif order.status == 'Cancelled' %}
@@ -112,8 +108,16 @@
     <p>© 2025 Online Food Ordering System. | John 3:16 Unconditional Love.</p>
   </footer>
 
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
   <script>
+    const socket = io();
+
+    socket.on('order_update', function(data) {
+      console.log('Order update received:', data);
+      // Refresh the orders table
+      fetchOrders();
+    });
     // Function to fetch and update orders
     async function fetchOrders() {
       try {

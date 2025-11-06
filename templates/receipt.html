@@ -31,18 +31,28 @@
     <p>© 2025 Online Food Ordering System. | John 3:16 Unconditional Love.</p>
   </footer>
 
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script>
-    // Check if order_id is available and poll for status updates
+    const socket = io();
     const urlParams = new URLSearchParams(window.location.search);
     const orderId = urlParams.get('order_id') || '{{ receipt.order_id }}';
+
+    // Real-time status update via SocketIO
+    socket.on('order_update', function(data) {
+      if (data.order_id === orderId) {
+        document.getElementById('status-display').innerHTML = `<strong>Status: ${data.status}</strong>`;
+      }
+    });
+
+    // Fallback polling for status updates
     if (orderId) {
       function pollStatus() {
         fetch(`/payment_status/${orderId}`)
           .then(response => response.json())
           .then(data => {
             document.getElementById('status-display').innerHTML = `<strong>Status: ${data.status}</strong>`;
-            if (data.status === 'Paid') {
-              // Stop polling
+            if (data.status === 'Paid' || data.status === 'Cancelled') {
+              // Stop polling if final status
             } else {
               setTimeout(pollStatus, 5000); // Poll every 5 seconds
             }
