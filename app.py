@@ -90,7 +90,32 @@ def dashboard():
         {'name': 'Pizza', 'image': 'images/Pizza.jpg'}
     ]
     cart = session.get('cart', [])
-    return render_template('dashboard.html', user_name=user_name, user_email=user_email, favorites=favorites, cart=cart)
+
+    # Calculate user stats
+    user_orders = [order for order in all_orders if order.get('user_email') == user_email]
+    total_orders = len(user_orders)
+    total_spent = sum(order['total'] for order in user_orders)
+
+    # Favorite category (simplified: based on most ordered items)
+    item_counts = {}
+    for order in user_orders:
+        for item in order['items']:
+            item_counts[item] = item_counts.get(item, 0) + 1
+    favorite_category = max(item_counts, key=item_counts.get) if item_counts else 'None'
+
+    # Recent orders (last 3)
+    recent_orders = user_orders[-3:] if user_orders else []
+
+    # Recommendations based on favorites (simple: suggest similar items)
+    recommendations = [
+        {'name': 'Chicken Adobo', 'image': 'images/Chicken Adobo.jpg', 'price': 120.00},
+        {'name': 'Sinigang', 'image': 'images/Sinigang.jpg', 'price': 150.00},
+        {'name': 'Tacos', 'image': 'images/Tacos.jpg', 'price': 100.00}
+    ]
+
+    return render_template('dashboard.html', user_name=user_name, user_email=user_email, favorites=favorites, cart=cart,
+                           total_orders=total_orders, total_spent=total_spent, favorite_category=favorite_category,
+                           recent_orders=recent_orders, recommendations=recommendations)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -121,8 +146,14 @@ def logout():
 def add_item():
     item_name = request.form['item_name']
     item_price = float(request.form['item_price'])
+    quantity = int(request.form.get('quantity', 1))
     cart = session.get('cart', [])
-    cart.append({'name': item_name, 'price': item_price})
+    # Check if item already exists
+    existing_item = next((item for item in cart if item['name'] == item_name), None)
+    if existing_item:
+        existing_item['quantity'] += quantity
+    else:
+        cart.append({'name': item_name, 'price': item_price, 'quantity': quantity})
     session['cart'] = cart
     return redirect(url_for('dashboard'))
 
@@ -130,7 +161,29 @@ def add_item():
 def remove_item(index):
     cart = session.get('cart', [])
     if 0 <= index < len(cart):
-        cart.pop(index)
+        if cart[index]['quantity'] > 1:
+            cart[index]['quantity'] -= 1
+        else:
+            cart.pop(index)
+        session['cart'] = cart
+    return redirect(url_for('dashboard'))
+
+@app.route('/remove_favorite/<int:index>')
+def remove_favorite(index):
+    favorites = session.get('favorites', [])
+    if 0 <= index < len(favorites):
+        favorites.pop(index)
+        session['favorites'] = favorites
+    return redirect(url_for('dashboard'))
+
+@app.route('/reorder/<order_id>')
+def reorder(order_id):
+    order = next((o for o in all_orders if o['order_id'] == order_id), None)
+    if order and order['user_email'] == session.get('user'):
+        cart = session.get('cart', [])
+        for item_name in order['items']:
+            # Simple reorder: add one of each item (in real app, would use original quantities)
+            cart.append({'name': item_name, 'price': 100.0, 'quantity': 1})  # Mock price
         session['cart'] = cart
     return redirect(url_for('dashboard'))
 
@@ -138,10 +191,17 @@ def remove_item(index):
 def add_item_payment():
     item_name = request.form['item_name']
     item_price = float(request.form['item_price'])
+    quantity = int(request.form.get('quantity', 1))
     cart = session.get('cart', [])
-    cart.append({'name': item_name, 'price': item_price})
+    # Check if item already exists
+    existing_item = next((item for item in cart if item['name'] == item_name), None)
+    if existing_item:
+        existing_item['quantity'] += quantity
+    else:
+        cart.append({'name': item_name, 'price': item_price, 'quantity': quantity})
     session['cart'] = cart
-    return {'success': True, 'cart': cart, 'total': sum(item['price'] for item in cart)}
+    total = sum(item['price'] * item['quantity'] for item in cart)
+    return {'success': True, 'cart': cart, 'total': total}
 
 @app.route('/edit_item_payment/<int:index>', methods=['POST'])
 def edit_item_payment(index):
@@ -149,17 +209,23 @@ def edit_item_payment(index):
     if 0 <= index < len(cart):
         item_name = request.form['item_name']
         item_price = float(request.form['item_price'])
-        cart[index] = {'name': item_name, 'price': item_price}
+        quantity = int(request.form.get('quantity', cart[index]['quantity']))
+        cart[index] = {'name': item_name, 'price': item_price, 'quantity': quantity}
         session['cart'] = cart
-    return {'success': True, 'cart': cart, 'total': sum(item['price'] for item in cart)}
+    total = sum(item['price'] * item['quantity'] for item in cart)
+    return {'success': True, 'cart': cart, 'total': total}
 
 @app.route('/remove_item_payment/<int:index>', methods=['POST'])
 def remove_item_payment(index):
     cart = session.get('cart', [])
     if 0 <= index < len(cart):
-        cart.pop(index)
+        if cart[index]['quantity'] > 1:
+            cart[index]['quantity'] -= 1
+        else:
+            cart.pop(index)
         session['cart'] = cart
-    return {'success': True, 'cart': cart, 'total': sum(item['price'] for item in cart)}
+    total = sum(item['price'] * item['quantity'] for item in cart)
+    return {'success': True, 'cart': cart, 'total': total}
 
 @app.route('/payment', methods=['GET', 'POST'])
 def payment():
@@ -177,7 +243,7 @@ def payment():
         city = request.form.get('city')
         if not email or not phone or not address or not postal or not city:
             return render_template('payment.html', cart=cart, error='Please provide email, phone, home address, postal number, and city for all payment methods.')
-        total = sum(item['price'] for item in cart)
+        total = sum(item['price'] * item['quantity'] for item in cart)
         order_id = str(uuid.uuid4())
         description = f"Order {order_id} for {session.get('user')}"
 
@@ -209,6 +275,7 @@ def payment():
             'postal': postal,
             'city': city,
             'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),  # Use current date and time
+            'processing_start': datetime.datetime.now(),
             'items': [item['name'] for item in cart],
             'total': total,
             'payment_method': payment_method,
@@ -362,12 +429,13 @@ def payment_status(order_id):
     order = next((o for o in all_orders if o.get('order_id') == order_id), None)
     if not order:
         return jsonify({'error': 'Order not found'}), 404
-    # Mock status update: in production, check with API
-    if order['status'] == 'Processing':
-        # Simulate payment completion after some time
-        import random
-        if random.choice([True, False]):  # Randomly mark as paid
+    # Automatic payment approval if not approved by admin within 5 minutes
+    if order['status'] == 'Processing' and order.get('processing_start'):
+        elapsed = datetime.datetime.now() - order['processing_start']
+        if elapsed.total_seconds() > 300:  # 5 minutes
             order['status'] = 'Paid'
+            # Emit real-time updates
+            socketio.emit('order_update', {'order_id': order_id, 'status': 'Paid', 'user_email': order['user_email']})
     return jsonify({'status': order['status']})
 
 if __name__ == '__main__':
